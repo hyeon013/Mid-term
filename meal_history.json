@@ -1,0 +1,32 @@
+[
+  {
+    "date": "2026-10-18",
+    "name": "우동",
+    "category": "일식",
+    "amount": 8500,
+    "location": "",
+    "companions": "",
+    "note": "",
+    "want_again": false
+  },
+  {
+    "date": "2026-10-18",
+    "name": "콩나물국밥",
+    "category": "한식",
+    "amount": 9000,
+    "location": "",
+    "companions": "",
+    "note": "",
+    "want_again": false
+  },
+  {
+    "date": "2026-10-18",
+    "name": "김치볶음밥",
+    "category": "한식",
+    "amount": 9000,
+    "location": "먀",
+    "companions": "먀",
+    "want_again": true,
+    "note": "먀"
+  }
+]
