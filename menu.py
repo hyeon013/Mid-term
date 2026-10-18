@@ -2069,7 +2069,7 @@ class MenuApp:
                     "PNG 또는 GIF 사진만 사용할 수 있습니다.",
                     parent=dialog,
 
-4                )
+                )
                 return
             preview = self._load_thumbnail(source)
             if preview is None:
