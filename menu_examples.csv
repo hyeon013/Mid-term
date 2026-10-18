@@ -1,0 +1,7 @@
+name,price,category,meal_type,spice_level,staple,has_soup,temperature,tastes,diet_tags,meal_categories,description
+비빔밥,10000,한식,외식,1,밥,false,따뜻한,salty|spicy,vegetarian,식사,여러 채소와 밥을 고추장에 비벼 먹는 한 그릇 메뉴.
+크림파스타,13500,양식,외식,0,면,false,따뜻한,mild,vegetarian,식사,부드럽고 고소한 크림소스에 면을 곁들인 메뉴.
+떡볶이,6000,분식,포장,3,기타,true,따뜻한,spicy|sweet,vegan,간편식|야식,매콤달콤한 양념에 쫄깃한 떡을 넣어 끓인 간식.
+치킨 샌드위치,7500,양식,간편식,0,빵,false,차가운,salty|mild,,간편식|식사,닭고기와 신선한 채소를 빵 사이에 넣은 간편 메뉴.
+물냉면,11000,한식,외식,0,면,true,차가운,mild|salty,,식사,시원한 육수와 쫄깃한 면을 함께 즐기는 메뉴.
+과일 요거트,5500,디저트,간식,0,기타,false,차가운,sweet|mild,vegetarian,간식,상큼한 과일과 부드러운 요거트를 담은 가벼운 간식.

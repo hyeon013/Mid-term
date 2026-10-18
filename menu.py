@@ -80,6 +80,118 @@ def load_menus(
         report("메뉴 데이터 형식이 올바르지 않습니다. 최상위 값은 목록이어야 합니다.")
         return []
 
+    return validate_menu_data(data, on_warning=report)
+
+
+def _csv_list(value: str) -> list[str]:
+    cleaned = value.strip()
+    if not cleaned:
+        return []
+    if cleaned.startswith("["):
+        try:
+            parsed = json.loads(cleaned)
+        except json.JSONDecodeError as error:
+            raise ValueError("목록 열은 JSON 배열 또는 | 구분 문자열이어야 합니다.") from error
+        if not isinstance(parsed, list) or any(
+            not isinstance(item, str) for item in parsed
+        ):
+            raise ValueError("목록 열은 문자열 배열이어야 합니다.")
+        return parsed
+    return [item.strip() for item in cleaned.split("|") if item.strip()]
+
+
+def load_menu_file(
+    path: Path,
+    *,
+    on_warning: Callable[[str], None] | None = None,
+) -> list[dict[str, Any]]:
+    report = on_warning or print
+    if path.suffix.casefold() == ".json":
+        try:
+            with path.open(encoding="utf-8-sig") as file:
+                data = json.load(file)
+        except (OSError, UnicodeError, json.JSONDecodeError) as error:
+            report(f"메뉴 JSON 파일을 읽을 수 없습니다: {error}")
+            return []
+        if not isinstance(data, list):
+            report("메뉴 데이터 형식이 올바르지 않습니다. 최상위 값은 목록이어야 합니다.")
+            return []
+        return validate_menu_data(data, on_warning=report)
+
+    if path.suffix.casefold() != ".csv":
+        report("JSON 또는 CSV 메뉴 파일만 불러올 수 있습니다.")
+        return []
+
+    required_fields = {
+        "name",
+        "price",
+        "category",
+        "meal_type",
+        "spice_level",
+        "staple",
+        "has_soup",
+        "temperature",
+    }
+    try:
+        with path.open(encoding="utf-8-sig", newline="") as file:
+            reader = csv.DictReader(file)
+            headers = set(reader.fieldnames or [])
+            missing = required_fields - headers
+            if missing:
+                report(
+                    "CSV 필수 열이 없습니다: "
+                    + ", ".join(sorted(missing))
+                )
+                return []
+
+            records: list[dict[str, Any]] = []
+            invalid_rows = 0
+            for line_number, row in enumerate(reader, start=2):
+                try:
+                    soup_text = (row.get("has_soup") or "").strip().casefold()
+                    if soup_text in {"true", "1", "yes", "y", "있음"}:
+                        has_soup = True
+                    elif soup_text in {"false", "0", "no", "n", "없음"}:
+                        has_soup = False
+                    else:
+                        raise ValueError("has_soup 값은 true/false 또는 있음/없음이어야 합니다.")
+                    records.append(
+                        {
+                            "name": row.get("name", ""),
+                            "price": int(row.get("price", "")),
+                            "category": row.get("category", ""),
+                            "meal_type": row.get("meal_type", ""),
+                            "spice_level": int(row.get("spice_level", "")),
+                            "staple": row.get("staple", ""),
+                            "has_soup": has_soup,
+                            "temperature": row.get("temperature", ""),
+                            "tastes": _csv_list(row.get("tastes", "")),
+                            "diet_tags": _csv_list(row.get("diet_tags", "")),
+                            "meal_categories": _csv_list(
+                                row.get("meal_categories", "")
+                            ),
+                            "image": row.get("image", ""),
+                            "description": row.get("description", ""),
+                        }
+                    )
+                except (ValueError, TypeError) as error:
+                    report(f"CSV {line_number}행을 건너뜁니다: {error}")
+                    invalid_rows += 1
+    except (OSError, UnicodeError, csv.Error) as error:
+        report(f"메뉴 CSV 파일을 읽을 수 없습니다: {error}")
+        return []
+
+    if invalid_rows:
+        report(f"CSV에서 형식이 잘못된 행 {invalid_rows}개를 건너뛰었습니다.")
+    return validate_menu_data(records, on_warning=report)
+
+
+def validate_menu_data(
+    data: list[Any],
+    *,
+    on_warning: Callable[[str], None] | None = None,
+) -> list[dict[str, Any]]:
+    report = on_warning or print
     valid_menus: list[dict[str, Any]] = []
     for index, item in enumerate(data, start=1):
         if not isinstance(item, dict):
@@ -882,6 +994,11 @@ class MenuApp:
         ttk.Label(result_header, text="메뉴 목록", style="Section.TLabel").pack(
             side="left"
         )
+        ttk.Button(
+            result_header,
+            text="현재 결과 CSV 저장",
+            command=self._export_visible_menus_csv,
+        ).pack(side="right", padx=(0, 12))
         self.result_status = ttk.Label(result_header, text="", style="Muted.TLabel")
         self.result_status.pack(side="right")
         self.menu_tree = self._create_tree(
@@ -1066,7 +1183,10 @@ class MenuApp:
     def _build_manage_tab(self, parent: ttk.Frame) -> None:
         ttk.Label(
             parent,
-            text="메뉴를 추가하거나 선택한 메뉴를 수정·삭제할 수 있습니다.",
+            text=(
+                "메뉴를 직접 추가하거나 JSON/CSV 파일에서 불러올 수 있습니다. "
+                "불러온 데이터는 현재 메뉴 목록을 교체합니다."
+            ),
             style="Muted.TLabel",
         ).pack(anchor="w", pady=(0, 10))
         actions = ttk.Frame(parent, style="App.TFrame")
@@ -1078,6 +1198,11 @@ class MenuApp:
         ttk.Button(actions, text="선택 메뉴 삭제", command=self._delete_selected_menu).pack(
             side="left"
         )
+        ttk.Button(
+            actions,
+            text="메뉴 파일 불러오기 (JSON/CSV)",
+            command=self._import_menus,
+        ).pack(side="left", padx=8)
         self.manage_count_label = ttk.Label(
             actions, text=f"등록 메뉴 {len(self.menus)}가지", style="Muted.TLabel"
         )
@@ -1110,6 +1235,139 @@ class MenuApp:
         )
         self.manage_description_label.pack(side="left", fill="x", expand=True)
         self.manage_photo: tk.PhotoImage | None = None
+
+    def _import_menus(self) -> None:
+        selected_path = filedialog.askopenfilename(
+            parent=self.root,
+            title="메뉴 데이터 불러오기",
+            filetypes=(
+                ("메뉴 데이터", "*.json *.csv"),
+                ("JSON 파일", "*.json"),
+                ("CSV 파일", "*.csv"),
+            ),
+        )
+        if not selected_path:
+            return
+        warnings: list[str] = []
+        imported_menus = load_menu_file(
+            Path(selected_path), on_warning=warnings.append
+        )
+        if not imported_menus:
+            messagebox.showerror(
+                "불러오기 실패",
+                "\n".join(warnings)
+                if warnings
+                else "불러올 수 있는 메뉴 데이터가 없습니다.",
+                parent=self.root,
+            )
+            return
+        warning_summary = (
+            f"\n\n확인 사항:\n" + "\n".join(warnings[:8])
+            + (f"\n외 {len(warnings) - 8}건" if len(warnings) > 8 else "")
+            if warnings
+            else ""
+        )
+        if not messagebox.askyesno(
+            "메뉴 목록 교체",
+            (
+                f"유효한 메뉴 {len(imported_menus)}개를 불러왔습니다. "
+                "현재 목록 전체를 이 데이터로 교체할까요?"
+                f"{warning_summary}"
+            ),
+            parent=self.root,
+        ):
+            return
+        if not save_menus(
+            imported_menus,
+            path=MENU_FILE,
+            on_error=lambda error: messagebox.showerror(
+                "저장 오류", error, parent=self.root
+            ),
+        ):
+            return
+        self.menus[:] = imported_menus
+        menu_names = {menu["name"] for menu in imported_menus}
+        updated_favorites = self.favorites & menu_names
+        if updated_favorites != self.favorites:
+            if not save_favorites(
+                updated_favorites,
+                path=FAVORITES_FILE,
+                on_error=lambda error: messagebox.showerror(
+                    "즐겨찾기 저장 오류",
+                    error,
+                    parent=self.root,
+                ),
+            ):
+                self.favorites = updated_favorites
+            else:
+                self.favorites = updated_favorites
+        self._refresh_menu_lists()
+        self._refresh_history()
+        messagebox.showinfo(
+            "불러오기 완료",
+            f"메뉴 {len(imported_menus)}개를 화면에 표시하고 "
+            f"{MENU_FILE.name}에 저장했습니다.",
+            parent=self.root,
+        )
+
+    def _export_visible_menus_csv(self) -> None:
+        if not self.visible_menus:
+            messagebox.showinfo(
+                "저장할 결과 없음",
+                "먼저 메뉴 추천 또는 조건 검색을 실행해 주세요.",
+                parent=self.root,
+            )
+            return
+        selected_path = filedialog.asksaveasfilename(
+            parent=self.root,
+            title="현재 메뉴 결과 저장",
+            defaultextension=".csv",
+            filetypes=(("CSV 파일", "*.csv"),),
+            initialfile="menu_results.csv",
+        )
+        if not selected_path:
+            return
+        destination = Path(selected_path).resolve()
+        protected_files = {
+            MENU_FILE.resolve(),
+            HISTORY_FILE.resolve(),
+            FAVORITES_FILE.resolve(),
+            PREFERENCES_FILE.resolve(),
+        }
+        if destination in protected_files:
+            messagebox.showerror(
+                "저장 위치 확인",
+                "원본 데이터 파일에는 결과를 저장할 수 없습니다.",
+                parent=self.root,
+            )
+            return
+        try:
+            with Path(selected_path).open(
+                "w", encoding="utf-8-sig", newline=""
+            ) as file:
+                writer = csv.writer(file)
+                writer.writerow(("이름", "예상 가격", "음식 설명"))
+                writer.writerows(
+                    (
+                        menu["name"],
+                        menu["price"],
+                        menu.get("description")
+                        or "설명이 등록되지 않았습니다.",
+                    )
+                    for menu in self.visible_menus
+                )
+        except OSError as error:
+            messagebox.showerror(
+                "결과 저장 오류",
+                f"현재 메뉴 결과를 저장하지 못했습니다: {error}",
+                parent=self.root,
+            )
+            return
+        messagebox.showinfo(
+            "저장 완료",
+            f"메뉴 결과 {len(self.visible_menus)}개를 CSV 파일로 저장했습니다.",
+            parent=self.root,
+        )
 
     def _create_tree(
         self,
@@ -1810,7 +2068,8 @@ class MenuApp:
                     "사진 형식 확인",
                     "PNG 또는 GIF 사진만 사용할 수 있습니다.",
                     parent=dialog,
-                )
+
+4                )
                 return
             preview = self._load_thumbnail(source)
             if preview is None:
